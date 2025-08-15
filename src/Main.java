@@ -4,6 +4,7 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.util.Random;
 
 public class Main {
 
@@ -20,6 +21,8 @@ public class Main {
     private JLabel preview; // Lives in editor card
 
     private EditorPanel editor;
+
+    private final Random rand = new Random();
 
     public static void main(String[] args) {
         // This schedules your UI setup to run on the EDT
@@ -72,12 +75,22 @@ public class Main {
 
             @Override
             public void onScramble() {
+                if (working == null) {
+                    return;
+                }
 
+                scrambleImage(working, 0.65, rand);
+                editor.setImage(working);
             }
 
             @Override
             public void onRotate() {
+                if (working == null) {
+                    return;
+                }
 
+                working = rotate90Deg(working);
+                editor.setImage(working);
             }
 
             @Override
@@ -87,7 +100,12 @@ public class Main {
 
             @Override
             public void onNoise() {
+                if (working == null) {
+                    return;
+                }
 
+                noiseImage(working, 0.65, rand);
+                editor.setImage(working);
             }
         });
         panel.add(editor, CardEditor);
@@ -161,4 +179,73 @@ public class Main {
             }
         }
     }
+
+    private BufferedImage rotate90Deg(BufferedImage img) {
+        int width = img.getWidth(); int height = img.getHeight();
+        double angle = Math.toRadians(90);
+
+        BufferedImage rotated = new BufferedImage(height, width, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2d = rotated.createGraphics();
+
+        g2d.translate(height, 0);
+        g2d.rotate(angle);
+
+        g2d.drawImage(img, 0, 0, null);
+        g2d.dispose();
+
+        return rotated;
+    }
+
+    private void scrambleImage(BufferedImage img, double intensity, Random rng) {
+        int width = img.getWidth(); int height = img.getHeight();
+
+        // Simple model: do a fraction of total pixels (N = width * height)
+        // At intensity = 1 this does ~25% of N swaps
+        int swaps = (int) Math.round(width * height * 0.25 * intensity);
+
+        // Loop and swap two random pixels each iteration.
+        for (int i = 0; i < swaps; ++i) {
+            int x1 = rng.nextInt(width); int y1 = rng.nextInt(height);
+            int x2 = rng.nextInt(width); int y2 = rng.nextInt(height);
+
+            int p1 = img.getRGB(x1, y1); int p2 = img.getRGB(x2, y2);
+            // Write both pixels back crosswise to actually swap the values
+            img.setRGB(x1, y1, p2);
+            img.setRGB(x2, y2, p1);
+        }
+    }
+
+    // Clamp a channel value to the valid [0, 255] RGB range
+    private static int clamp(int value) {
+        return (value < 0) ? 0 : (Math.min(value, 255));
+    }
+
+     private void noiseImage(BufferedImage img, double intensity, Random rng) {
+        int width = img.getWidth(); int height = img.getHeight();
+
+         // Map intensity to a per-channel noise amplitude
+         int amplitude = (int) Math.round(255 * 0.4 * intensity);
+        if (amplitude <= 0 ) {
+            return;
+        }
+
+        for (int i = 0 ; i < width; ++i) {
+            for (int j = 0; j < height; ++j) {
+                int rgb = img.getRGB(i, j);
+
+                // >>> not >> in case we try to shift negative numbers
+                int alpha = (rgb >>> 24) & 0xFF;
+                int red = (rgb >>> 16) & 0xFF;
+                int green = (rgb >>> 8) & 0xFF;
+                int blue = rgb & 0xFF;
+
+                // Add uniform noise in [-amp, +amp] independently to each channel
+                red = clamp(red + rng.nextInt(2 * amplitude + 1) - amplitude);
+                green = clamp(green + rng.nextInt(2 * amplitude + 1) - amplitude);
+                blue = clamp(blue + rng.nextInt(2 * amplitude + 1) - amplitude);
+
+                img.setRGB(i, j, (alpha << 24) | (red << 16) | (green << 8) | blue);
+            }
+        }
+     }
 }
